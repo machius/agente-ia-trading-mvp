@@ -1,0 +1,5 @@
+langchain~=1.4.2
+langchain-ollama
+typing-extensions
+langgraph
+ipython
