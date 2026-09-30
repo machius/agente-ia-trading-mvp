@@ -3,3 +3,5 @@ langchain-ollama
 typing-extensions
 langgraph
 ipython
+yfinance
+python-dotenv

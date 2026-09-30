@@ -11,7 +11,7 @@ def llm_call(state: dict):
             model_with_tools.invoke(
                 [
                     SystemMessage(
-                        content="You are a helpful assistant tasked with performing arithmetic on a set of inputs."
+                        content="You are a helpful assistant tasked with finding interesting market data using the internet."
                     )
                 ]
                 + state["messages"]

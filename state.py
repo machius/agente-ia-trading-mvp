@@ -6,3 +6,6 @@ import operator
 class MessagesState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
     llm_calls: int
+    tool_results: Annotated[list[dict], operator.add]
+    validation_attempts: int
+    needs_correction: bool

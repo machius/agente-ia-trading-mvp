@@ -4,3 +4,6 @@
 __pycache__/
 *.py[codz]
 *$py.class
+
+.env
+.DS_Store
