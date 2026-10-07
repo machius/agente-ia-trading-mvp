@@ -2,20 +2,25 @@ import re
 from langchain.messages import SystemMessage
 
 NUMBER_PATTERN = re.compile(r"-?\d[\d,]*\.?\d*")
+TIME_UNIT_SUFFIX = re.compile(
+    r"-?\d[\d,]*\.?\d*\s*(?:hour|hours|day|days|week|weeks|month|months|year|years)\b",
+    re.IGNORECASE,
+)
 MAX_VALIDATION_ATTEMPTS = 2
 TOLERANCE = 0.01
 
 
 def _parse_numbers(text: str) -> set[float]:
+    text_without_time_refs = TIME_UNIT_SUFFIX.sub("", text)
+
     numbers = set()
-    for raw in NUMBER_PATTERN.findall(text):
+    for raw in NUMBER_PATTERN.findall(text_without_time_refs):
         cleaned = raw.replace(",", "")
         try:
             numbers.add(float(cleaned))
         except ValueError:
             continue
     return numbers
-
 
 def _is_verified(claimed: float, known: set[float]) -> bool:
     return any(abs(claimed - k) < TOLERANCE for k in known)

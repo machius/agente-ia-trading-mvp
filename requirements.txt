@@ -5,3 +5,5 @@ langgraph
 ipython
 yfinance
 python-dotenv
+ddgs
+streamlit
