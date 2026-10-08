@@ -1,7 +1,11 @@
+import json
 import yfinance as yf
 # tools/news.py
 from ddgs import DDGS
 from langchain.tools import tool
+
+from integrations.coinbase.client import CoinbaseClient
+from services.market_data_service import MarketDataService, AssetMarketData
 
 
 @tool
@@ -30,24 +34,130 @@ def get_news(query: str, max_items: int = 5) -> str:
 
     return "\n".join(lines)
 
+
+def _is_valid_crypto_format(symbol: str) -> bool:
+    parts = symbol.split("-")
+    if len(parts) == 2 and parts[0] and parts[1] == "USD":
+        return True
+    return False
+
 @tool
-def get_market_data(ticker: str, period: str = "6mo") -> str:
-    """Get historical OHLCV summary for a ticker.
+def get_market_data(assets: list[str]) -> str:
+    """Get historical market data and indicators for EXACTLY 4 assets.
 
     Args:
-        ticker: Yahoo Finance symbol (e.g. "^GSPC" for S&P 500, "GC=F" for gold)
-        period: History window, e.g. "1mo", "6mo", "1y"
+        assets: List of exactly 4 asset symbols. Crypto assets must use BASE-USD format
+                (e.g., "BTC-USD"). Non-crypto assets use standard ticker (e.g., "AAPL").
     """
-    data = yf.Ticker(ticker).history(period=period)
-    if data.empty:
-        return f"No data found for {ticker}"
+    if not isinstance(assets, list):
+        return json.dumps({"error": "assets must be a list of strings"})
+    
+    if len(assets) != 4:
+        return json.dumps({"error": "Exactly 4 assets are required"})
+    
+    normalized_assets = []
+    for a in assets:
+        if not isinstance(a, str) or not a.strip():
+            return json.dumps({"error": "All assets must be non-empty strings"})
+        normalized = a.strip().upper()
+        if normalized in normalized_assets:
+            return json.dumps({"error": f"Duplicate asset found: {normalized}"})
+        normalized_assets.append(normalized)
 
-    last = data.iloc[-1]
-    change_pct = (last["Close"] / data["Close"].iloc[0] - 1) * 100
+    results = []
+    
+    with CoinbaseClient() as coinbase_client:
+        service = MarketDataService(coinbase_client)
+        
+        for asset in normalized_assets:
+            # Decisión arquitectónica: Consideramos como "crypto" a cualquier símbolo que contenga un guion "-".
+            # Esto nos permite capturar y rechazar casos inválidos (como 'BTC-EUR', '-USD', 'BTC-') antes 
+            # de enviarlos a yfinance o Coinbase. Tickers non-crypto soportados (ej. '^GSPC', 'GC=F', 'AAPL')
+            # no contienen guiones. Si en el futuro se requiere soportar acciones como 'BRK-B', esta lógica 
+            # deberá evolucionar.
+            if "-" in asset:
+                if not _is_valid_crypto_format(asset):
+                    results.append({
+                        "symbol": asset,
+                        "error": {
+                            "code": "INVALID_FORMAT",
+                            "message": f"Invalid crypto format: {asset}. Must be BASE-USD."
+                        }
+                    })
+                    continue
+                
+                try:
+                    snapshot = service.get_snapshot(asset)
+                except Exception as e:
+                    results.append({
+                        "symbol": asset,
+                        "error": {
+                            "code": "MARKET_DATA_ERROR",
+                            "message": f"Unexpected error: {str(e)}"
+                        }
+                    })
+                    continue
 
-    return (
-        f"{ticker} last close: {last['Close']:.2f}, "
-        f"period high: {data['High'].max():.2f}, "
-        f"period low: {data['Low'].min():.2f}, "
-        f"period change: {change_pct:.2f}%"
-    )
+                if isinstance(snapshot, AssetMarketData):
+                    results.append({
+                        "symbol": snapshot.symbol,
+                        "timestamp": snapshot.timestamp.isoformat(),
+                        "close": snapshot.close,
+                        "sma_50": snapshot.sma_50,
+                        "sma_200": snapshot.sma_200,
+                        "rci": snapshot.rci,
+                        "candles_used": snapshot.candles_used
+                    })
+                else:
+                    results.append({
+                        "symbol": snapshot.symbol,
+                        "error": {
+                            "code": snapshot.code,
+                            "message": snapshot.message
+                        }
+                    })
+            else:
+                try:
+                    data = yf.Ticker(asset).history(period="1y")
+                    if data.empty:
+                        results.append({
+                            "symbol": asset,
+                            "error": {
+                                "code": "NO_DATA",
+                                "message": f"No data found for {asset}"
+                            }
+                        })
+                    else:
+                        last = data.iloc[-1]
+                        closes = data["Close"].tolist()
+                        sma_50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
+                        sma_200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
+                        
+                        timestamp_iso = data.index[-1].isoformat() if not data.empty else None
+                        
+                        results.append({
+                            "symbol": asset,
+                            "timestamp": timestamp_iso,
+                            "close": float(last["Close"]),
+                            "sma_50": float(sma_50) if sma_50 is not None else None,
+                            "sma_200": float(sma_200) if sma_200 is not None else None,
+                            "rci": None,  # Documented logic: RCI not calculated for non-crypto
+                            "candles_used": len(closes)
+                        })
+                except Exception as e:
+                    results.append({
+                        "symbol": asset,
+                        "error": {
+                            "code": "YFINANCE_ERROR",
+                            "message": str(e)
+                        }
+                    })
+
+    return json.dumps({
+        "timeframe": "ONE_DAY",
+        "indicators": {
+            "sma_periods": [50, 200],
+            "rci_period": 9
+        },
+        "assets": results
+    })
