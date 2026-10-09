@@ -106,10 +106,12 @@ class CoinbaseClient:
         return [by_timestamp[ts] for ts in sorted(by_timestamp)]
 
     def get_recent_candles(
-        self,
-        product_id: str,
-        granularity: Granularity,
-        count: int,
+            self,
+            product_id: str,
+            granularity: Granularity,
+            count: int,
+            *,
+            reference_time: datetime | None = None,
     ) -> list[Candle]:
         """Return up to `count` of the most recent CLOSED candles, oldest first.
 
@@ -121,15 +123,13 @@ class CoinbaseClient:
             raise ValueError("count must be at least 1")
 
         bucket = granularity.seconds
-        now_ts = int(self._clock().timestamp())
-        current_bucket_start = now_ts - now_ts % bucket
+        ref_ts = int((reference_time or self._clock()).timestamp())
+        current_bucket_start = ref_ts - ref_ts % bucket
 
         candles = self.get_candles(
             product_id,
             granularity,
-            start=datetime.fromtimestamp(
-                current_bucket_start - count * bucket, tz=timezone.utc
-            ),
+            start=datetime.fromtimestamp(current_bucket_start - count * bucket, tz=timezone.utc),
             end=datetime.fromtimestamp(current_bucket_start - 1, tz=timezone.utc),
         )
         return candles[-count:]

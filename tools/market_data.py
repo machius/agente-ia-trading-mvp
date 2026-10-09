@@ -1,8 +1,8 @@
 import json
 import yfinance as yf
-# tools/news.py
 from ddgs import DDGS
 from langchain.tools import tool
+from datetime import date, datetime, timedelta, timezone
 
 from integrations.coinbase.client import CoinbaseClient
 from services.market_data_service import MarketDataService, AssetMarketData
@@ -41,20 +41,54 @@ def _is_valid_crypto_format(symbol: str) -> bool:
         return True
     return False
 
+MIN_ASSETS = 1
+MAX_ASSETS = 4
+MAX_HISTORY_DAYS = 365
+
+def _validate_as_of_date(as_of_date: str | None) -> tuple[datetime | None, dict | None]:
+    """Returns (exclusive upper bound = midnight UTC of the day AFTER as_of_date,
+    or None), and (error dict, or None).
+    """
+    if as_of_date is None:
+        return None, None
+    try:
+        parsed = date.fromisoformat(as_of_date)
+    except ValueError:
+        return None, {"error": f"Invalid as_of_date format: {as_of_date!r}. Use YYYY-MM-DD."}
+
+    today = datetime.now(timezone.utc).date()
+    if parsed > today:
+        return None, {"error": f"as_of_date cannot be in the future: {as_of_date}"}
+    if (today - parsed).days > MAX_HISTORY_DAYS:
+        return None, {"error": f"as_of_date cannot be more than {MAX_HISTORY_DAYS} days in the past"}
+
+    # Límite exclusivo: medianoche UTC del día SIGUIENTE, para que el candle
+    # cerrado de as_of_date quede incluido como "el más reciente".
+    next_day = datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc) + timedelta(days=1)
+    return next_day, None
+
 @tool
-def get_market_data(assets: list[str]) -> str:
-    """Get historical market data and indicators for EXACTLY 4 assets.
+def get_market_data(assets: list[str], as_of_date: str | None = None) -> str:
+    """Get market data and indicators for 1 to 4 assets, for today or a past date.
 
     Args:
-        assets: List of exactly 4 asset symbols. Crypto assets must use BASE-USD format
+        assets: List of 1 to 4 asset symbols. Crypto assets must use BASE-USD format
                 (e.g., "BTC-USD"). Non-crypto assets use standard ticker (e.g., "AAPL").
+        as_of_date: Optional historical date in YYYY-MM-DD format. Omit for today's
+                    data. Must be within the last 365 days and not in the future.
     """
     if not isinstance(assets, list):
         return json.dumps({"error": "assets must be a list of strings"})
-    
-    if len(assets) != 4:
-        return json.dumps({"error": "Exactly 4 assets are required"})
-    
+    # if len(assets) != 4:
+    #     return json.dumps({"error": "Exactly 4 assets are required"})
+
+    if not (MIN_ASSETS <= len(assets) <= MAX_ASSETS):
+        return json.dumps({"error": f"Between {MIN_ASSETS} and {MAX_ASSETS} assets are required"})
+
+    as_of_dt, date_error = _validate_as_of_date(as_of_date)
+    if date_error:
+        return json.dumps(date_error)
+
     normalized_assets = []
     for a in assets:
         if not isinstance(a, str) or not a.strip():
@@ -85,9 +119,9 @@ def get_market_data(assets: list[str]) -> str:
                         }
                     })
                     continue
-                
+
                 try:
-                    snapshot = service.get_snapshot(asset)
+                    snapshot = service.get_snapshot(asset, as_of=as_of_dt)
                 except Exception as e:
                     results.append({
                         "symbol": asset,
@@ -118,7 +152,11 @@ def get_market_data(assets: list[str]) -> str:
                     })
             else:
                 try:
-                    data = yf.Ticker(asset).history(period="1y")
+                    if as_of_dt:
+                        start_window = as_of_dt - timedelta(days=400)
+                        data = yf.Ticker(asset).history(start=start_window, end=as_of_dt)
+                    else:
+                        data = yf.Ticker(asset).history(period="1y")
                     if data.empty:
                         results.append({
                             "symbol": asset,
@@ -155,9 +193,7 @@ def get_market_data(assets: list[str]) -> str:
 
     return json.dumps({
         "timeframe": "ONE_DAY",
-        "indicators": {
-            "sma_periods": [50, 200],
-            "rci_period": 9
-        },
-        "assets": results
+        "as_of_date": as_of_date or date.today().isoformat(),
+        "indicators": {"sma_periods": [50, 200], "rci_period": 9},
+        "assets": results,
     })

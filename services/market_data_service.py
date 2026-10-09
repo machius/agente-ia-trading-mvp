@@ -78,15 +78,15 @@ class MarketDataService:
         self._rci_period = rci_period
         self._candle_count = candle_count
 
-    def get_snapshots(self, product_ids: Sequence[str]) -> list[AssetResult]:
+    def get_snapshots(self, product_ids: Sequence[str], as_of: datetime | None = None) -> list[AssetResult]:
         """Return one result per product, in the same order as `product_ids`."""
-        return [self.get_snapshot(product_id) for product_id in product_ids]
+        return [self.get_snapshot(product_id, as_of) for product_id in product_ids]
 
-    def get_snapshot(self, product_id: str) -> AssetResult:
+    def get_snapshot(self, product_id: str,  as_of: datetime | None = None) -> AssetResult:
         """Fetch candles and compute the indicators for a single product."""
         try:
             candles = self._client.get_recent_candles(
-                product_id, self._granularity, self._candle_count
+                product_id, self._granularity, self._candle_count, reference_time=as_of
             )
         except CoinbaseError as exc:
             return AssetError(product_id, exc.code, str(exc))

@@ -31,7 +31,6 @@ if __name__ == "__main__":
     agent = agent_builder.compile()
     display(Image(agent.get_graph(xray=True).draw_mermaid_png()))
 
-    messages = [HumanMessage(content="")]
     messages = agent.invoke({"messages": messages})
     for m in messages["messages"]:
         m.pretty_print()

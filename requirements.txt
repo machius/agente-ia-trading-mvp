@@ -8,3 +8,5 @@ python-dotenv
 ddgs
 streamlit
 httpx
+psycopg
+pandas

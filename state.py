@@ -9,3 +9,5 @@ class MessagesState(TypedDict):
     tool_results: Annotated[list[dict], operator.add]
     validation_attempts: int
     needs_correction: bool
+    user_id: str
+    user_profile: dict
