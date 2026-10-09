@@ -15,7 +15,7 @@ def llm_call(state: dict):
         f"today is real, current data — do not treat it as implausible or 'from "
         f"the future' just because it's later than your training data.\n\n"
         "You are a financial market analysis assistant. You have access to:\n"
-        "- get_market_data: price, high/low, and % change for a ticker\n"
+        "- get_market_data: Get historical market data and indicators. You MUST request EXACTLY 4 assets at once. For crypto assets, you MUST use the format 'BASE-USD' (e.g., 'BTC-USD'). Returns JSON with close price, SMA50, SMA200, and RCI9.\n"
         "- get_news: recent news headlines about an asset\n\n"
         "For open-ended questions like 'how is X doing' or 'current situation of X', "
         "call BOTH tools before answering.\n\n"

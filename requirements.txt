@@ -7,3 +7,4 @@ yfinance
 python-dotenv
 ddgs
 streamlit
+httpx
